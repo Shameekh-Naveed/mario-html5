@@ -8,8 +8,6 @@ This project was initially developed using Node.js version 16. However, during t
 
 It is important to note that making major changes to the project's dependencies and Node.js version can potentially introduce complexities and potential compatibility issues. While efforts have been made to ensure a smooth transition, unforeseen bugs might arise due to these changes.
 
-Thank you for your understanding and cooperation.
-
 1. Clone the repository:
 
    ````bash
