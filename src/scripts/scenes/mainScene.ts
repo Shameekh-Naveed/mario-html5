@@ -1,3 +1,4 @@
+import React from 'react'
 import config from '../config'
 import AnimatedTiles from '../helpers/animatedTiles'
 import Debug from '../helpers/debug'
@@ -15,9 +16,14 @@ import { Move, Jump, Large, Fire, Invincible, EnterPipe, HitBrick } from '../pow
 import { arrayProps2ObjProps } from '../utils'
 import { container } from 'tsyringe'
 
+import { onPlayerJoin, isHost, myPlayer, getState } from 'playroomkit'
+
 type SceneData = {
   [prop: string]: any
 }
+
+const DEFAULT_WIDTH = 400
+const DEFAULT_HEIGHT = 240
 
 export default class MainScene extends Phaser.Scene {
   music: Phaser.Sound.BaseSound
@@ -29,9 +35,76 @@ export default class MainScene extends Phaser.Scene {
   enemyGroup: EnemyGroup
   rooms: rooms = {}
   dests: dests = {}
+  mario2: Player
+  players: Player[] = []
 
   constructor() {
     super({ key: 'MainScene' })
+  }
+
+  // Add a new player to the game
+  private addPlayer(playerState, worldLayer, camera, room) {
+    const { id, x, y } = playerState
+    const playerX = playerState.getState('x') || config.initX
+    const playerY = playerState.getState('y') || config.initY
+    const colors = [0x000000, 0x0000ff, 0x00ff00, 0xff0000]
+    let color: number
+    if (playerState.getState('color')) color = playerState.getState('color')
+    else {
+      color = colors[Math.floor(Math.random() * colors.length)]
+      playerState.setState('color', color)
+    }
+
+    const newPlayer = new Player({
+      id,
+      scene: this,
+      texture: 'atlas',
+      frame: 'mario/stand',
+      color,
+      x: playerX,
+      y: playerY,
+      allowPowers: [Jump, Move, Invincible, Large, Fire, EnterPipe, HitBrick],
+      playroomPlayer: playerState,
+    })
+    this.players = [...this.players, newPlayer]
+    newPlayer.powers
+      .add(Move, () => new Move(newPlayer))
+      .add(Jump, () => new Jump(newPlayer))
+      // .add(EnterPipe, () => new EnterPipe(this.cursors, this.dests, this.rooms))
+      .add(HitBrick, () => new HitBrick(newPlayer, ['up']))
+
+      // The new player shall act as the main player for his game only 
+      // and for the rest he will just be a remote hollow copy mimicing everything in his main game 
+    if (newPlayer.id === myPlayer().id) {
+      camera.setBounds(room.x, room.y, room.width, room.height).startFollow(newPlayer)
+      const endPoint = worldLayer.findByIndex(5)
+      // 终点旗杆
+      new Flag(this, endPoint.pixelX, endPoint.pixelY).overlap(newPlayer, () => this.restartGame(false))
+      // 游戏倒计时
+      new CountDown(this)
+        .start(config.playTime)
+        .on('interval', (time: number) => {
+          this.hud.setValue('time', time)
+        })
+        .on('end', () => this.mario.die())
+
+      newPlayer.on('die', () => {
+        this.time.delayedCall(3000, () => {
+          if (this.hud.getValue('lives') === 0) {
+            this.gameOver()
+          } else {
+            this.restartGame()
+          }
+        })
+      })
+
+      newPlayer.powers.add(EnterPipe, () => new EnterPipe(this.cursors, this.dests, this.rooms))
+      // @ts-ignore
+      this.physics.add.overlap(newPlayer, this.enemyGroup, this.playerOverlapEnemy, undefined, this)
+    }
+
+    // @ts-ignore
+    this.physics.add.collider(newPlayer, worldLayer, this.playerColliderWorld, undefined, this)
   }
 
   create(sceneData: SceneData) {
@@ -63,6 +136,15 @@ export default class MainScene extends Phaser.Scene {
     this.enemyGroup = new EnemyGroup(this, enemiesData)
     this.powerUpGroup = new PowerUpGroup(this)
 
+    const camera = this.cameras.main
+    const room = this.rooms.room1
+
+    // this.add.tileSprite(0, 0, worldLayer.width, DEFAULT_HEIGHT, 'backgroundImage').setOrigin(0, 0)
+    const backgroundImage = this.add.image(0, 0, 'backgroundImage')
+    backgroundImage.setOrigin(0, 0)
+    backgroundImage.setScale(worldLayer.width / backgroundImage.width, DEFAULT_HEIGHT / backgroundImage.height)
+    backgroundImage.setDepth(-1)
+
     // 分数、金币、倒计时等信息显示
     this.hud = new Hud(this, [
       { title: 'SCORE', key: 'score', value: 0 },
@@ -72,34 +154,7 @@ export default class MainScene extends Phaser.Scene {
       { title: 'FPS', key: 'fps', value: () => Math.floor(this.game.loop.actualFps) },
     ])
 
-    this.mario = new Player({
-      scene: this,
-      texture: 'atlas',
-      frame: 'mario/stand',
-      x: config.initX,
-      y: config.initY,
-      allowPowers: [Jump, Move, Invincible, Large, Fire, EnterPipe, HitBrick],
-    }).on('die', () => {
-      this.time.delayedCall(3000, () => {
-        if (this.hud.getValue('lives') === 0) {
-          this.gameOver()
-        } else {
-          this.restartGame()
-        }
-      })
-    })
-
-    const endPoint = worldLayer.findByIndex(5)
-    // 终点旗杆
-    new Flag(this, endPoint.pixelX, endPoint.pixelY).overlap(this.mario, () => this.restartGame(false))
-
-    // 游戏倒计时
-    new CountDown(this)
-      .start(config.playTime)
-      .on('interval', (time: number) => {
-        this.hud.setValue('time', time)
-      })
-      .on('end', () => this.mario.die())
+    onPlayerJoin((playerState) => this.addPlayer(playerState, worldLayer, camera, room))
 
     // 调试
     new Debug({ scene: this, layer: worldLayer })
@@ -113,28 +168,15 @@ export default class MainScene extends Phaser.Scene {
       .register('WorldLayer', { useValue: worldLayer })
       .register('Cursors', { useValue: this.cursors })
       .register(Brick, { useValue: brick })
-      .register(Player, { useValue: this.mario })
+      // .register(Player, { useValue: this.mario })
       .register(EnemyGroup, { useValue: this.enemyGroup })
       .register(PowerUpGroup, { useValue: this.powerUpGroup })
 
-    this.mario.powers
-      .add(Move, () => new Move(this.mario))
-      .add(Jump, () => new Jump(this.mario))
-      .add(EnterPipe, () => new EnterPipe(this.cursors, this.dests, this.rooms))
-      .add(HitBrick, () => new HitBrick(this.mario, ['up']))
-
-    const camera = this.cameras.main
-    const room = this.rooms.room1
-    camera.setBounds(room.x, room.y, room.width, room.height).startFollow(this.mario)
     camera.roundPixels = true
 
     this.physics.add.collider(this.powerUpGroup, worldLayer)
     // @ts-ignore
     this.physics.add.collider(this.enemyGroup, worldLayer, this.enemyColliderWorld, undefined, this)
-    // @ts-ignore
-    this.physics.add.collider(this.mario, worldLayer, this.playerColliderWorld, undefined, this)
-    // @ts-ignore
-    this.physics.add.overlap(this.mario, this.enemyGroup, this.playerOverlapEnemy, undefined, this)
     // @ts-ignore
     this.physics.add.overlap(this.enemyGroup, this.enemyGroup, this.enemyOverlapEnemy, undefined, this)
     // @ts-ignore
@@ -144,12 +186,23 @@ export default class MainScene extends Phaser.Scene {
 
   update(time: number, delta: number) {
     if (this.physics.world.isPaused) return
-    const { animatedTiles, hud, mario, cursors, enemyGroup, powerUpGroup } = this
+    const { animatedTiles, hud, cursors, enemyGroup, powerUpGroup } = this
     animatedTiles.update(delta)
     hud.update()
-    mario.update(time, delta, cursors)
-    enemyGroup.update(time, delta, mario)
-    powerUpGroup.update(time, delta, mario)
+    for (const player of this.players) {
+      player.update(time, delta, cursors)
+      enemyGroup.update(time, delta, player)
+      powerUpGroup.update(time, delta, player)
+      const diedEnemy = player.playroomPlayer.getState('enemyDied')
+      if (diedEnemy) {
+        // const enemy = enemyGroup.pool.find((enemy) => enemy.id === diedEnemy)
+        // const enemy = enemyGroup.children.find((enemy) => diedEnemy.x === enemy.x && diedEnemy.y === enemy.y)
+        // console.log('Killing enemy ', diedEnemy, enemy)
+        // enemy?.die()
+        // diedEnemy.overlapPlayer(player, true)
+        player.playroomPlayer.setState('enemyDied', null)
+      }
+    }
   }
 
   /**
@@ -223,12 +276,19 @@ export default class MainScene extends Phaser.Scene {
 
   private playerOverlapEnemy(mario: Player, enemy: Enemy) {
     if (enemy.dead || mario.dead) return
-
     // body.touching 对象会出现多个为 true 的值，为避免错误，加上了玩家速度的判断。
     const stepOnEnemy = mario.body.touching.down && enemy.body.touching.up && mario.body.velocity.y !== 0
 
     if (mario.overlapEnemy(enemy, stepOnEnemy)) return
-    if (enemy.overlapPlayer(mario, stepOnEnemy)) return
+    if (enemy.overlapPlayer(mario, stepOnEnemy)) {
+      console.log('I killed', enemy)
+      for (const player of this.players) {
+        if (player.id === mario.id) continue
+        player.playroomPlayer.setState('enemyDied', { x: enemy.x, y: enemy.y })
+      }
+
+      return
+    }
 
     if (stepOnEnemy) {
       mario.body.setVelocityY(-80)
@@ -253,7 +313,8 @@ export default class MainScene extends Phaser.Scene {
    * @param name 道具名
    */
   private createPowerUp(name: string, x: number, y: number) {
-    const mario = this.mario
+    // const mario = this.mario
+    const mario = this.players.find((player) => player.id === myPlayer().id) as Player
     let params: any[] = []
 
     switch (name) {

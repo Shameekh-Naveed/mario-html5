@@ -3,6 +3,7 @@ import { score } from '../../helpers/decorators'
 
 export class Enemy extends Phaser.Physics.Arcade.Sprite {
   body: Phaser.Physics.Arcade.Body
+
   /**
    * 是否死亡
    */
@@ -20,12 +21,15 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
    */
   vx = -30
 
+  id: string
+
   constructor(scene: Phaser.Scene, x: number, y: number, texture: string, frame: string, deadAnimKey: string) {
     super(scene, x, y, texture, frame)
     scene.add.existing(this)
     scene.physics.add.existing(this)
     this.setOrigin(0, 1)
     this.deadAnimKey = deadAnimKey
+    this.id = Phaser.Math.RND.uuid()
   }
 
   /**
@@ -37,6 +41,7 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
     // 被踩到默认直接死亡
     if (stepOnEnemy) {
       this.die()
+      return true
     }
   }
 

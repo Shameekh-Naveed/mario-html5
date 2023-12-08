@@ -1,6 +1,7 @@
 import { PowerManage } from '../powers'
 import { Enemy } from '../objects/enemies'
 import { lives } from '../helpers/decorators'
+import { PlayerState } from 'playroomkit'
 
 type Config = {
   scene: Phaser.Scene
@@ -10,6 +11,9 @@ type Config = {
   frame: string
   // 玩家的能力
   allowPowers: Function[]
+  id: string
+  playroomPlayer: PlayerState
+  color: number
 }
 
 /**
@@ -34,13 +38,23 @@ export default class Player extends Phaser.GameObjects.Sprite {
    */
   animSuffix = ''
 
-  constructor({ scene, x, y, texture, frame, allowPowers }: Config) {
+  id: string
+
+  playroomPlayer: PlayerState
+
+  color: number
+
+  constructor({ scene, x, y, texture, frame, allowPowers, id, playroomPlayer, color }: Config) {
     super(scene, x, y, texture, frame)
     scene.physics.world.enable(this)
     scene.add.existing(this)
     this.body.setSize(8, 16)
     this.makeAnimaions()
     this.powers = new PowerManage(this, allowPowers)
+    this.id = id
+    this.playroomPlayer = playroomPlayer
+
+    this.setTint(color)
   }
 
   /**

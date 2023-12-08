@@ -1,5 +1,6 @@
 import { Power, Large } from './index'
 import Player from '../objects/player'
+import { myPlayer, setState } from 'playroomkit'
 
 const defaultOptions = {
   /**
@@ -31,7 +32,6 @@ export class Move implements Power {
     const { ax, stopSpeed } = this.options
     const velocity = player.body.velocity
     const animSuffix = player.animSuffix
-
     // 移动
     if (cursors.left.isDown) {
       player.setFlipX(true)
@@ -60,6 +60,27 @@ export class Move implements Power {
           player.anims.play((Math.abs(velocity.x) >= 10 ? 'run' : 'stand') + animSuffix, true)
         }
       }
+    }
+    if (player.id === myPlayer().id) {
+      player.playroomPlayer.setState('VelocityX', velocity.x)
+      player.playroomPlayer.setState('VelocityY', velocity.y)
+      player.playroomPlayer.setState('AccelerationX', player.body.acceleration.x)
+      player.playroomPlayer.setState('FlipX', player.flipX)
+      player.playroomPlayer.setState('anim', player.anims.currentAnim.key)
+      player.playroomPlayer.setState('x', player.x)
+      player.playroomPlayer.setState('y', player.y)
+    } else {
+      const vx = player.playroomPlayer.getState('VelocityX')
+      const vy = player.playroomPlayer.getState('VelocityY')
+      const ax = player.playroomPlayer.getState('AccelerationX')
+      const flipX = player.playroomPlayer.getState('FlipX')
+      const anim = player.playroomPlayer.getState('anim')
+
+      if (vx !== null && vx !== undefined && !Number.isNaN(vx)) player.body.setVelocityX(vx)
+      if (vy !== null && vy !== undefined && !Number.isNaN(vy)) player.body.setVelocityY(vy)
+      if (ax !== null && ax !== undefined && !Number.isNaN(ax)) player.body.setAccelerationX(ax)
+      if (flipX !== null && flipX !== undefined) player.setFlipX(flipX)
+      if (anim !== null && anim !== undefined) player.anims.play(anim, true)
     }
   }
 }
